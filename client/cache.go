@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -16,11 +17,12 @@ const (
 )
 
 type TipCapCash struct {
+	sync.Mutex
 	gas       *big.Int
 	expiredAt int64
 }
 
-func (c TipCapCash) isExpired() bool {
+func (c *TipCapCash) isExpired() bool {
 	return c.expiredAt <= time.Now().Unix()
 }
 
@@ -34,18 +36,21 @@ func (c *TipCapCash) GasTipCap(ctx context.Context, client *Client) (*big.Int, e
 		return nil, errors.Wrap(err, "failed to get suggestion")
 	}
 
+	c.Lock()
 	c.gas = tip
 	c.expiredAt = time.Now().Unix() + TipCapCashTTL
+	c.Unlock()
 
 	return tip, err
 }
 
 type BaseFeeCash struct {
+	sync.Mutex
 	base      *big.Int
 	expiredAt int64
 }
 
-func (c BaseFeeCash) isExpired() bool {
+func (c *BaseFeeCash) isExpired() bool {
 	return c.expiredAt <= time.Now().Unix()
 }
 
@@ -59,8 +64,11 @@ func (c *BaseFeeCash) GasFee(ctx context.Context, client *Client, tip *big.Int) 
 			return nil, errors.Wrap(err, "failed to get block header")
 		}
 		baseFee = head.BaseFee
+
+		c.Lock()
 		c.base = baseFee
 		c.expiredAt = time.Now().Unix() + BaseFeeCashTTL
+		c.Unlock()
 	}
 
 	// ref: https://github.com/ethereum/go-ethereum/blob/v1.10.17/accounts/abi/bind/base.go#L252
@@ -68,10 +76,14 @@ func (c *BaseFeeCash) GasFee(ctx context.Context, client *Client, tip *big.Int) 
 }
 
 type NonceCash struct {
+	sync.Mutex
 	nonces lru.LRUCache
 }
 
 func (c *NonceCash) Nonce(ctx context.Context, priv string, client *Client) (uint64, error) {
+	c.Lock()
+	defer c.Unlock()
+
 	v, ok := c.nonces.Get(priv)
 	if ok {
 		return v.(*nonce.Nonce).Increment()

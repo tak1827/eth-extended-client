@@ -14,8 +14,17 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/pkg/errors"
+	"github.com/rs/zerolog"
 	"github.com/tak1827/go-cache/lru"
 	"github.com/tak1827/transaction-confirmer/confirm"
+)
+
+var (
+	ErrSyncSendTimeout = errors.New("sync send timeout")
+
+	timeoutDuration                 time.Duration
+	syncSendTimeoutDuration         time.Duration
+	syncSendConfirmIntervalDuration time.Duration
 )
 
 type Client struct {
@@ -25,19 +34,22 @@ type Client struct {
 	chainID  *big.Int
 	timeout  int64
 
-	tipCash     TipCapCash
-	baseFeeCash BaseFeeCash
-	nonceCash   NonceCash
+	tipCash     *TipCapCash
+	baseFeeCash *BaseFeeCash
+	nonceCash   *NonceCash
 
-	confirmer *confirm.Confirmer
-	cancel    context.CancelFunc
+	logger zerolog.Logger
+
+	confirmer               *confirm.Confirmer
+	queueSize               int
+	unconfirmedTx           *safeMap
+	sentTx                  *safeMap
+	syncSendTimeout         int64
+	syncSendConfirmInterval int64
+	cancel                  context.CancelFunc
 }
 
-var (
-	timeoutDuration time.Duration
-)
-
-func NewClient(ctx context.Context, endpoint string, confirmer *confirm.Confirmer, opts ...Option) (c Client, err error) {
+func NewClient(ctx context.Context, endpoint string, cfmOpts []confirm.Opt, opts ...Option) (c Client, err error) {
 	rpcclient, err := rpc.DialContext(ctx, endpoint)
 	if err != nil {
 		err = errors.Wrap(err, fmt.Sprintf("failed to conecting endpoint(%s)", endpoint))
@@ -47,22 +59,37 @@ func NewClient(ctx context.Context, endpoint string, confirmer *confirm.Confirme
 	c.ethclient = ethclient.NewClient(rpcclient)
 	c.GasPrice = big.NewInt(int64(DefaultGasPrice))
 	c.timeout = DefaultTimeout
-	c.confirmer = confirmer
+	c.tipCash = &TipCapCash{}
+	c.baseFeeCash = &BaseFeeCash{}
+	c.nonceCash = &NonceCash{nonces: lru.NewCache(1024)}
+	c.queueSize = DefaultConfirmerQueueSize
+	c.logger = DefaultLogger
+	c.syncSendTimeout = DefaultSyncSendTimeout
+	c.syncSendConfirmInterval = DefaultSyncSendConfirmInterval
 
 	if c.chainID, err = c.ethclient.ChainID(ctx); err != nil {
 		err = errors.Wrap(err, "failed to get chain id")
 		return
 	}
 
-	c.tipCash = TipCapCash{}
-	c.baseFeeCash = BaseFeeCash{}
-	c.nonceCash = NonceCash{nonces: lru.NewCache(1024)}
-
 	for i := range opts {
 		opts[i].Apply(&c)
 	}
 
+	confirmer := confirm.NewConfirmer(&c, c.queueSize, append([]confirm.Opt{
+		confirm.WithWorkers(1),
+		confirm.WithTimeout(c.timeout),
+		confirm.WithAfterTxSent(c.afterTxSent),
+		confirm.WithAfterTxConfirmed(c.afterTxConfirmed),
+	}, cfmOpts...)...)
+
+	c.confirmer = &confirmer
+	c.unconfirmedTx = &safeMap{item: make(map[string]struct{})}
+	c.sentTx = &safeMap{item: make(map[string]struct{})}
+
 	timeoutDuration = time.Duration(time.Duration(c.timeout) * time.Second)
+	syncSendTimeoutDuration = time.Duration(time.Duration(c.syncSendTimeout) * time.Second)
+	syncSendConfirmIntervalDuration = time.Duration(time.Duration(c.syncSendConfirmInterval) * time.Millisecond)
 
 	return
 }
@@ -112,7 +139,80 @@ func (c *Client) AsyncSend(ctx context.Context, priv string, to *common.Address,
 	return c.SendTx(timeoutCtx, tx)
 }
 
-func (c *Client) SyncSend() {
+func (c *Client) SyncSend(ctx context.Context, priv string, to *common.Address, amount *big.Int, input []byte) (hash string, err error) {
+	timeoutCtx, cancel := context.WithTimeout(ctx, timeoutDuration)
+	defer cancel()
+
+	tx, err := c.sinedTx(ctx, priv, to, amount, input)
+	if err != nil {
+		err = errors.Wrap(err, "failed to sign tx")
+	}
+
+	hash = tx.Hash().Hex()
+
+	if err = c.confirmer.EnqueueTx(timeoutCtx, tx); err != nil {
+		err = errors.Wrap(err, fmt.Sprintf("failed to enqueue tx(%v)", tx))
+		return
+	}
+
+	timeoutCtx, cancel = context.WithTimeout(ctx, syncSendTimeoutDuration)
+	defer cancel()
+
+	timer := time.NewTicker(syncSendConfirmIntervalDuration)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-timeoutCtx.Done():
+			err = ErrSyncSendTimeout
+			return
+		case <-timer.C:
+			if !c.sentTx.has(hash) {
+				continue
+			}
+			if !c.unconfirmedTx.has(hash) {
+				c.sentTx.delete(hash)
+				return
+			}
+		}
+	}
+}
+
+func (c *Client) ConfirmTx(ctx context.Context, hash string, confirmationBlocks uint64) error {
+	recept, err := c.Receipt(ctx, hash)
+	if err != nil {
+		if errors.Is(err, ethereum.NotFound) {
+			return confirm.ErrTxNotFound
+		}
+		return errors.Wrap(err, "err TransactionReceipt")
+	}
+
+	if recept.Status != 1 {
+		return confirm.ErrTxFailed
+	}
+
+	block, err := c.LatestBlockNumber(ctx)
+	if err != nil {
+		return errors.Wrap(err, "err LatestBlockNumber")
+	}
+
+	if recept.BlockNumber.Uint64()+confirmationBlocks > block {
+		return confirm.ErrTxConfirmPending
+	}
+
+	return nil
+}
+
+func (c *Client) Receipt(ctx context.Context, hash string) (*types.Receipt, error) {
+	return c.ethclient.TransactionReceipt(ctx, common.HexToHash(hash))
+}
+
+func (c *Client) LatestBlockNumber(ctx context.Context) (uint64, error) {
+	header, err := c.ethclient.HeaderByNumber(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	return header.Number.Uint64(), nil
 }
 
 func (c *Client) estimateGasLimit(ctx context.Context, from common.Address, to *common.Address, value *big.Int, input []byte, tip, gasFee *big.Int) (uint64, error) {
@@ -170,4 +270,19 @@ func (c *Client) sinedTx(ctx context.Context, priv string, to *common.Address, a
 	signer := types.NewLondonSigner(c.chainID)
 
 	return types.SignNewTx(privKey, signer, txdata)
+}
+
+func (c *Client) afterTxSent(hash string) error {
+	c.logger.Info().Msgf("tx sent, hash: %s", hash)
+	c.unconfirmedTx.add(hash)
+	c.sentTx.add(hash)
+	return nil
+}
+
+func (c *Client) afterTxConfirmed(hash string) error {
+	c.logger.Info().Msgf("tx confirmed, tx: %v", hash)
+	if c.unconfirmedTx.has(hash) {
+		c.unconfirmedTx.delete(hash)
+	}
+	return nil
 }
