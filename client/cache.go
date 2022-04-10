@@ -82,7 +82,7 @@ func (c *NonceCash) Nonce(ctx context.Context, priv string, client *Client) (uin
 		return 0, errors.Wrap(err, "failed to new nonce")
 	}
 
-	c.nonces.Add(priv, &n)
+	c.nonces.Add(priv, n)
 
 	return n.Current()
 }
