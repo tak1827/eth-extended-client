@@ -103,6 +103,7 @@ func (c *Client) Start() {
 
 func (c *Client) Stop() {
 	c.confirmer.Close(c.cancel)
+	c.ethclient.Close()
 }
 
 func (c *Client) Nonce(ctx context.Context, priv string) (nonce uint64, err error) {
