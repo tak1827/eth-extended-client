@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"fmt"
 	"math/big"
 	"time"
 
@@ -52,7 +51,7 @@ type Client struct {
 func NewClient(ctx context.Context, endpoint string, cfmOpts []confirm.Opt, opts ...Option) (c Client, err error) {
 	rpcclient, err := rpc.DialContext(ctx, endpoint)
 	if err != nil {
-		err = errors.Wrap(err, fmt.Sprintf("failed to conecting endpoint(%s)", endpoint))
+		err = errors.Wrapf(err, "failed to conecting endpoint(%s)", endpoint)
 		return
 	}
 
@@ -147,12 +146,13 @@ func (c *Client) SyncSend(ctx context.Context, priv string, to *common.Address, 
 	tx, err := c.sinedTx(ctx, priv, to, amount, input)
 	if err != nil {
 		err = errors.Wrap(err, "failed to sign tx")
+		return
 	}
 
 	hash = tx.Hash().Hex()
 
 	if err = c.confirmer.EnqueueTx(timeoutCtx, tx); err != nil {
-		err = errors.Wrap(err, fmt.Sprintf("failed to enqueue tx(%v)", tx))
+		err = errors.Wrapf(err, "failed to enqueue tx(%v)", tx)
 		return
 	}
 
