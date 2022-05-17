@@ -143,7 +143,7 @@ func (c *Client) SyncSend(ctx context.Context, priv string, to *common.Address, 
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeoutDuration)
 	defer cancel()
 
-	tx, err := c.sinedTx(ctx, priv, to, amount, input)
+	tx, err := c.sinedTx(timeoutCtx, priv, to, amount, input)
 	if err != nil {
 		err = errors.Wrap(err, "failed to sign tx")
 		return
