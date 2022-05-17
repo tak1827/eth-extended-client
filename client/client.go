@@ -216,6 +216,30 @@ func (c *Client) LatestBlockNumber(ctx context.Context) (uint64, error) {
 	return header.Number.Uint64(), nil
 }
 
+func (c *Client) QueryContract(ctx context.Context, to common.Address, input []byte) (output []byte, err error) {
+	var (
+		msg  = ethereum.CallMsg{To: &to, Data: input}
+		code []byte
+	)
+	if output, err = c.ethclient.CallContract(ctx, msg, nil); err != nil {
+		err = errors.Wrapf(err, "failed to call contract(=%s)", to.String())
+		return
+	}
+
+	if len(output) == 0 {
+		// Make sure we have a contract to operate on, and bail out otherwise.
+		if code, err = c.ethclient.CodeAt(ctx, to, nil); err != nil {
+			err = errors.Wrap(err, "at ethclient.CodeAt")
+			return
+		} else if len(code) == 0 {
+			err = errors.Wrap(bind.ErrNoCode, "at ethclient.CodeAt")
+			return
+		}
+	}
+
+	return
+}
+
 func (c *Client) estimateGasLimit(ctx context.Context, from common.Address, to *common.Address, value *big.Int, input []byte, tip, gasFee *big.Int) (uint64, error) {
 	msg := ethereum.CallMsg{
 		From:      from,

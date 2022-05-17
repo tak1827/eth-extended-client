@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"math/big"
 	"strings"
 	"testing"
 
@@ -15,6 +16,7 @@ import (
 const (
 	TestEndpoint = "http://localhost:8545"
 	TestPrivKey  = "d1c71e71b06e248c8dbe94d49ef6d6b0d64f5d71b1e33a0f39e14dadb070304a"
+	TestAccount  = "0xE3b0DE0E4CA5D3CB29A9341534226C4D31C9838f"
 )
 
 func TestAsyncSend(t *testing.T) {
@@ -55,6 +57,30 @@ func TestSyncSend(t *testing.T) {
 	c.Start()
 	defer c.Stop()
 
+	// send eth
 	_, err := c.SyncSend(ctx, TestPrivKey, &to, amount, nil)
 	require.NoError(t, err)
+
+	// deploy contract
+	var (
+		parsed, _ = abi.JSON(strings.NewReader(contract.ERC20ABI))
+		input, _  = parsed.Pack("", []interface{}{"name", "symbol"}...)
+		bytecode  = common.FromHex(contract.ERC20Bin)
+	)
+	hash, err := c.SyncSend(ctx, TestPrivKey, nil, nil, append(bytecode, input...))
+	require.NoError(t, err)
+
+	var (
+		receipt, _ = c.Receipt(ctx, hash)
+		acount     = common.HexToAddress(TestAccount)
+		inp, _     = parsed.Pack("balanceOf", []interface{}{acount}...)
+	)
+	output, err := c.QueryContract(ctx, receipt.ContractAddress, inp)
+	require.NoError(t, err)
+
+	var (
+		results, _ = parsed.Unpack("balanceOf", output)
+		balance    = *abi.ConvertType(results[0], new(*big.Int)).(**big.Int)
+	)
+	require.Equal(t, "0", balance.String())
 }
