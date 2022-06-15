@@ -208,6 +208,10 @@ func (c *Client) Receipt(ctx context.Context, hash string) (*types.Receipt, erro
 	return c.ethclient.TransactionReceipt(ctx, common.HexToHash(hash))
 }
 
+func (c *Client) BalanceOf(ctx context.Context, account common.Address) (*big.Int, error) {
+	return c.ethclient.BalanceAt(ctx, account, nil)
+}
+
 func (c *Client) LatestBlockNumber(ctx context.Context) (uint64, error) {
 	header, err := c.ethclient.HeaderByNumber(ctx, nil)
 	if err != nil {
