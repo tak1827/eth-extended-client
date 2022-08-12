@@ -348,6 +348,8 @@ github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7 h1:epCh84lMvA70
 github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7/go.mod h1:q4W45IWZaF22tdD+VEXcAWRA037jwmWEB5VWYORlTpc=
 github.com/tak1827/go-cache v0.0.1 h1:td0SYH6XORkU2YX/6M1JlbhJTXg5gDmVhj++0kCG2Bc=
 github.com/tak1827/go-cache v0.0.1/go.mod h1:HQnrodOzR/jUTrchf61Wr4En6/1JtOcilnqvqqAk0T8=
+github.com/tak1827/go-cache v0.0.3 h1:9aGeAh5IPOvrdM1SwpOcsXJbMOL2iKJ20+SEcLsWHJc=
+github.com/tak1827/go-cache v0.0.3/go.mod h1:HQnrodOzR/jUTrchf61Wr4En6/1JtOcilnqvqqAk0T8=
 github.com/tak1827/go-queue v0.0.1 h1:kpG/4q8QAcMPGStNqjVSVJd+WjKPQu8xg9eOtCv1XoY=
 github.com/tak1827/go-queue v0.0.1/go.mod h1:Ooh83/H1mtQMUhZjmmmNCZE9apM9xumjLFLUaSyZNDk=
 github.com/tak1827/nonce-incrementor v0.0.0-20211230050937-a653087ec99f h1:ukw1Aktc2EVgPqmdUMi4u38lgb8NpfuzZTqgfMt/CKA=

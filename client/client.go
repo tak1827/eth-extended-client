@@ -60,7 +60,7 @@ func NewClient(ctx context.Context, endpoint string, cfmOpts []confirm.Opt, opts
 	c.timeout = DefaultTimeout
 	c.tipCash = &TipCapCash{}
 	c.baseFeeCash = &BaseFeeCash{}
-	c.nonceCash = &NonceCash{nonces: lru.NewCache(1024)}
+	c.nonceCash = &NonceCash{nonces: lru.NewCache(1024, 0)}
 	c.queueSize = DefaultConfirmerQueueSize
 	c.logger = DefaultLogger
 	c.syncSendTimeout = DefaultSyncSendTimeout
