@@ -8,7 +8,7 @@ require (
 	github.com/rs/zerolog v1.26.1
 	github.com/shopspring/decimal v1.3.1
 	github.com/stretchr/testify v1.7.0
-	github.com/tak1827/go-cache v0.0.3
+	github.com/tak1827/go-cache v0.0.4
 	github.com/tak1827/nonce-incrementor v0.0.0-20211230050937-a653087ec99f
 	github.com/tak1827/transaction-confirmer v0.0.1
 )
