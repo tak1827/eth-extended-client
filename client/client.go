@@ -127,11 +127,11 @@ func (c *Client) SendTx(ctx context.Context, tx interface{}) (string, error) {
 	return signedTx.Hash().Hex(), nil
 }
 
-func (c *Client) AsyncSend(ctx context.Context, priv string, to *common.Address, amount *big.Int, input []byte) (string, error) {
+func (c *Client) AsyncSend(ctx context.Context, priv string, to *common.Address, amount *big.Int, input []byte, gasLimit uint64) (string, error) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeoutDuration)
 	defer cancel()
 
-	tx, err := c.sinedTx(timeoutCtx, priv, to, amount, input)
+	tx, err := c.sinedTx(timeoutCtx, priv, to, amount, input, gasLimit)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to sign tx")
 	}
@@ -139,11 +139,11 @@ func (c *Client) AsyncSend(ctx context.Context, priv string, to *common.Address,
 	return c.SendTx(timeoutCtx, tx)
 }
 
-func (c *Client) SyncSend(ctx context.Context, priv string, to *common.Address, amount *big.Int, input []byte) (hash string, err error) {
+func (c *Client) SyncSend(ctx context.Context, priv string, to *common.Address, amount *big.Int, input []byte, gasLimit uint64) (hash string, err error) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeoutDuration)
 	defer cancel()
 
-	tx, err := c.sinedTx(timeoutCtx, priv, to, amount, input)
+	tx, err := c.sinedTx(timeoutCtx, priv, to, amount, input, gasLimit)
 	if err != nil {
 		err = errors.Wrap(err, "failed to sign tx")
 		return
@@ -257,7 +257,7 @@ func (c *Client) estimateGasLimit(ctx context.Context, from common.Address, to *
 	return c.ethclient.EstimateGas(ctx, msg)
 }
 
-func (c *Client) sinedTx(ctx context.Context, priv string, to *common.Address, amount *big.Int, input []byte) (*types.Transaction, error) {
+func (c *Client) sinedTx(ctx context.Context, priv string, to *common.Address, amount *big.Int, input []byte, gasLimit uint64) (*types.Transaction, error) {
 	privKey, err := crypto.HexToECDSA(priv)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get nonce")
@@ -273,10 +273,11 @@ func (c *Client) sinedTx(ctx context.Context, priv string, to *common.Address, a
 		return nil, errors.Wrap(err, "failed to get FeeCap")
 	}
 
-	auth := bind.NewKeyedTransactor(privKey)
-	gasLimit, err := c.estimateGasLimit(ctx, auth.From, to, amount, input, tip, gasFee)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to estimate gas")
+	if gasLimit == 0 {
+		auth := bind.NewKeyedTransactor(privKey)
+		if gasLimit, err = c.estimateGasLimit(ctx, auth.From, to, amount, input, tip, gasFee); err != nil {
+			return nil, errors.Wrap(err, "failed to estimate gas")
+		}
 	}
 
 	n, err := c.nonceCash.Nonce(ctx, priv, c)

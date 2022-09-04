@@ -60,7 +60,7 @@ func TestSyncSend(t *testing.T) {
 	defer c.Stop()
 
 	// send eth
-	_, err := c.SyncSend(ctx, TestPrivKey, &to, amount, nil)
+	_, err := c.SyncSend(ctx, TestPrivKey, &to, amount, nil, 0)
 	require.NoError(t, err)
 
 	// deploy contract
@@ -69,7 +69,7 @@ func TestSyncSend(t *testing.T) {
 		input, _  = parsed.Pack("", []interface{}{"name", "symbol"}...)
 		bytecode  = common.FromHex(contract.ERC20Bin)
 	)
-	hash, err := c.SyncSend(ctx, TestPrivKey, nil, nil, append(bytecode, input...))
+	hash, err := c.SyncSend(ctx, TestPrivKey, nil, nil, append(bytecode, input...), 0)
 	require.NoError(t, err)
 
 	time.Sleep(1 * time.Second)
@@ -81,7 +81,7 @@ func TestSyncSend(t *testing.T) {
 		issInput, _ = parsed.Pack("mint", []interface{}{account, amount}...)
 	)
 
-	_, err = c.SyncSend(ctx, TestPrivKey, &receipt.ContractAddress, nil, issInput)
+	_, err = c.SyncSend(ctx, TestPrivKey, &receipt.ContractAddress, nil, issInput, 0)
 	require.NoError(t, err)
 
 	var (

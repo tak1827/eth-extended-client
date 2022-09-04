@@ -20,7 +20,7 @@ var (
 c.Start()
 defer c.Stop()
 
-hash, err := c.SyncSend(ctx, TestPrivKey, &to, amount, nil)
+hash, err := c.SyncSend(ctx, TestPrivKey, &to, amount, nil, 0)
 if err != nil {
 	panic(err)
 }
