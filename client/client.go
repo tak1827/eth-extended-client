@@ -189,6 +189,7 @@ func (c *Client) ConfirmTx(ctx context.Context, hash string, confirmationBlocks 
 	}
 
 	if recept.Status != 1 {
+		c.logger.Warn().Msgf("receipt(=%v) status is failed", recept)
 		return confirm.ErrTxFailed
 	}
 
