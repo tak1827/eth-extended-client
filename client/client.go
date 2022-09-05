@@ -3,11 +3,14 @@ package client
 import (
 	"context"
 	"math/big"
+	"strings"
 	"time"
 
+	// "github.com/davecgh/go-spew/spew"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -80,6 +83,7 @@ func NewClient(ctx context.Context, endpoint string, cfmOpts []confirm.Opt, opts
 		confirm.WithTimeout(c.timeout),
 		confirm.WithAfterTxSent(c.afterTxSent),
 		confirm.WithAfterTxConfirmed(c.afterTxConfirmed),
+		confirm.WithErrHandler(c.errHandle),
 	}, cfmOpts...)...)
 
 	c.confirmer = &confirmer
@@ -136,12 +140,24 @@ func (c *Client) AsyncSend(ctx context.Context, priv string, to *common.Address,
 		return "", errors.Wrap(err, "failed to sign tx")
 	}
 
-	return c.SendTx(timeoutCtx, tx)
+	hash, err := c.SendTx(timeoutCtx, tx)
+	if err != nil {
+		_ = c.nonceCash.Decrement(ctx, priv, c)
+	}
+
+	return hash, err
 }
 
 func (c *Client) SyncSend(ctx context.Context, priv string, to *common.Address, amount *big.Int, input []byte, gasLimit uint64) (hash string, err error) {
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeoutDuration)
 	defer cancel()
+
+	var (
+		retryLimit = 3
+		retryCount = 0
+	)
+
+RE_TRY:
 
 	tx, err := c.sinedTx(timeoutCtx, priv, to, amount, input, gasLimit)
 	if err != nil {
@@ -152,6 +168,17 @@ func (c *Client) SyncSend(ctx context.Context, priv string, to *common.Address, 
 	hash = tx.Hash().Hex()
 
 	if err = c.confirmer.EnqueueTx(timeoutCtx, tx); err != nil {
+		// if wrong nonce, retry up to 3 times
+		if strings.Contains(err.Error(), core.ErrReplaceUnderpriced.Error()) || strings.Contains(err.Error(), core.ErrUnderpriced.Error()) {
+			if retryCount < retryLimit {
+				if n, nErr := c.Nonce(timeoutCtx, priv); nErr == nil {
+					c.nonceCash.Reset(priv, n)
+				}
+				retryCount++
+				goto RE_TRY
+			}
+		}
+		_ = c.nonceCash.Decrement(ctx, priv, c)
 		err = errors.Wrapf(err, "failed to enqueue tx(%v)", tx)
 		return
 	}
@@ -185,6 +212,7 @@ func (c *Client) ConfirmTx(ctx context.Context, hash string, confirmationBlocks 
 		if errors.Is(err, ethereum.NotFound) {
 			return confirm.ErrTxNotFound
 		}
+
 		return errors.Wrap(err, "err TransactionReceipt")
 	}
 
@@ -316,4 +344,12 @@ func (c *Client) afterTxConfirmed(hash string) error {
 		c.unconfirmedTx.delete(hash)
 	}
 	return nil
+}
+
+func (c *Client) errHandle(hash string, err error) {
+	c.logger.Info().Msgf("err happen while confirming transaction. tx: %v, err: %s", hash, err.Error())
+	if c.unconfirmedTx.has(hash) {
+		c.unconfirmedTx.delete(hash)
+	}
+	return
 }

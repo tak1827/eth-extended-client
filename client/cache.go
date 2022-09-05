@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"sync"
 	"time"
@@ -27,8 +28,13 @@ func (c *TipCapCash) isExpired() bool {
 }
 
 func (c *TipCapCash) GasTipCap(ctx context.Context, client *Client) (*big.Int, error) {
-	if !c.isExpired() {
-		return c.gas, nil
+	c.Lock()
+	expired := c.isExpired()
+	gas := c.gas
+	c.Unlock()
+
+	if !expired {
+		return gas, nil
 	}
 
 	tip, err := client.ethclient.SuggestGasTipCap(ctx)
@@ -55,10 +61,12 @@ func (c *BaseFeeCash) isExpired() bool {
 }
 
 func (c *BaseFeeCash) GasFee(ctx context.Context, client *Client, tip *big.Int) (*big.Int, error) {
-	var baseFee *big.Int
-	if !c.isExpired() {
-		baseFee = c.base
-	} else {
+	c.Lock()
+	expired := c.isExpired()
+	baseFee := c.base
+	c.Unlock()
+
+	if expired {
 		head, err := client.ethclient.HeaderByNumber(ctx, nil)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to get block header")
@@ -89,12 +97,39 @@ func (c *NonceCash) Nonce(ctx context.Context, priv string, client *Client) (uin
 		return v.(*nonce.Nonce).Increment()
 	}
 
-	n, err := nonce.NewNonce(ctx, client, priv, true)
+	ensure := true
+	n, err := nonce.NewNonce(ctx, client, priv, ensure)
 	if err != nil {
 		return 0, errors.Wrap(err, "failed to new nonce")
 	}
 
 	c.nonces.Add(priv, n)
 
-	return n.Current()
+	return n.Increment()
+}
+
+func (c *NonceCash) Decrement(ctx context.Context, priv string, client *Client) error {
+	c.Lock()
+	defer c.Unlock()
+
+	v, ok := c.nonces.Get(priv)
+	if !ok {
+		return fmt.Errorf("no nonce for %s", priv)
+	}
+
+	_, err := v.(*nonce.Nonce).Decrement()
+	return err
+}
+
+func (c *NonceCash) Reset(priv string, n uint64) error {
+	c.Lock()
+	defer c.Unlock()
+
+	v, ok := c.nonces.Get(priv)
+	if !ok {
+		return fmt.Errorf("no nonce for %s", priv)
+	}
+
+	v.(*nonce.Nonce).Reset(n)
+	return nil
 }

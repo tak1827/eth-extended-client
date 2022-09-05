@@ -1,6 +1,6 @@
 .PHONY: test
 test:
-	MallocNanoZone=0 go test -race ./...
+	MallocNanoZone=0 go test -race -timeout 15s ./...
 
 fmt:
 	go fmt ./...
@@ -9,7 +9,7 @@ lint:
 	go vet ./...
 
 chain:
-	ganache -p 8545 -i 1010 -h localhost -l 300000000 --account \
+	ganache -p 8545 -i 1010 -h localhost -l 300000000 --miner.blockTime 1 --account \
 	'0xd1c71e71b06e248c8dbe94d49ef6d6b0d64f5d71b1e33a0f39e14dadb070304a,1000000000000000000000' \
 	'0x8179ce3d00ac1d1d1d38e4f038de00ccd0e0375517164ac5448e3acc847acb34,1000000000000000000000' \
 	'0xdf38daebd09f56398cc8fd699b72f5ea6e416878312e1692476950f427928e7d,1000000000000000000000' \

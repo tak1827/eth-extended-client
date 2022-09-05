@@ -8,10 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const (
-	TestPrivKey2 = "8179ce3d00ac1d1d1d38e4f038de00ccd0e0375517164ac5448e3acc847acb34"
-)
-
 func TestTipCapCash(t *testing.T) {
 	var (
 		ctx  = context.Background()
@@ -49,9 +45,9 @@ func TestNonceCash(t *testing.T) {
 		c, _ = NewClient(ctx, TestEndpoint, nil, WithTimeout(10))
 	)
 
-	n, err := c.nonceCash.Nonce(ctx, TestPrivKey2, &c)
+	n, err := c.nonceCash.Nonce(ctx, TestPrivKey3, &c)
 	require.NoError(t, err)
 	require.Equal(t, uint64(0), n)
 
-	require.True(t, c.nonceCash.nonces.Contains(TestPrivKey2))
+	require.True(t, c.nonceCash.nonces.Contains(TestPrivKey3))
 }
