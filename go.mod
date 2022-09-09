@@ -10,7 +10,7 @@ require (
 	github.com/shopspring/decimal v1.3.1
 	github.com/stretchr/testify v1.7.0
 	github.com/tak1827/go-cache v0.0.4
-	github.com/tak1827/nonce-incrementor v0.0.0-20220905005546-71ee08e41807
+	github.com/tak1827/nonce-incrementor v0.0.0-20220909065110-864dbafb5e9e
 	github.com/tak1827/transaction-confirmer v0.0.1
 )
 

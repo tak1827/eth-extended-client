@@ -3,14 +3,12 @@ package client
 import (
 	"context"
 	"math/big"
-	"strings"
 	"time"
 
 	// "github.com/davecgh/go-spew/spew"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -135,14 +133,14 @@ func (c *Client) AsyncSend(ctx context.Context, priv string, to *common.Address,
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeoutDuration)
 	defer cancel()
 
-	tx, err := c.sinedTx(timeoutCtx, priv, to, amount, input, gasLimit)
+	tx, nonce, err := c.sinedTx(timeoutCtx, priv, to, amount, input, gasLimit)
 	if err != nil {
 		return "", errors.Wrap(err, "failed to sign tx")
 	}
 
 	hash, err := c.SendTx(timeoutCtx, tx)
 	if err != nil {
-		_ = c.nonceCash.Decrement(ctx, priv, c)
+		_ = c.nonceCash.AddFailedNonce(ctx, priv, nonce)
 	}
 
 	return hash, err
@@ -152,14 +150,7 @@ func (c *Client) SyncSend(ctx context.Context, priv string, to *common.Address, 
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeoutDuration)
 	defer cancel()
 
-	var (
-		retryLimit = 3
-		retryCount = 0
-	)
-
-RE_TRY:
-
-	tx, err := c.sinedTx(timeoutCtx, priv, to, amount, input, gasLimit)
+	tx, nonce, err := c.sinedTx(timeoutCtx, priv, to, amount, input, gasLimit)
 	if err != nil {
 		err = errors.Wrap(err, "failed to sign tx")
 		return
@@ -168,17 +159,7 @@ RE_TRY:
 	hash = tx.Hash().Hex()
 
 	if err = c.confirmer.EnqueueTx(timeoutCtx, tx); err != nil {
-		// if wrong nonce, retry up to 3 times
-		if strings.Contains(err.Error(), core.ErrReplaceUnderpriced.Error()) || strings.Contains(err.Error(), core.ErrUnderpriced.Error()) {
-			if retryCount < retryLimit {
-				if n, nErr := c.Nonce(timeoutCtx, priv); nErr == nil {
-					c.nonceCash.Reset(priv, n)
-				}
-				retryCount++
-				goto RE_TRY
-			}
-		}
-		_ = c.nonceCash.Decrement(ctx, priv, c)
+		_ = c.nonceCash.AddFailedNonce(ctx, priv, nonce)
 		err = errors.Wrapf(err, "failed to enqueue tx(%v)", tx)
 		return
 	}
@@ -286,49 +267,59 @@ func (c *Client) estimateGasLimit(ctx context.Context, from common.Address, to *
 	return c.ethclient.EstimateGas(ctx, msg)
 }
 
-func (c *Client) sinedTx(ctx context.Context, priv string, to *common.Address, amount *big.Int, input []byte, gasLimit uint64) (*types.Transaction, error) {
+func (c *Client) NonceCash(ctx context.Context, priv string) (uint64, error) {
+	return c.nonceCash.Current(ctx, priv)
+}
+
+func (c *Client) sinedTx(ctx context.Context, priv string, to *common.Address, amount *big.Int, input []byte, gasLimit uint64) (*types.Transaction, uint64, error) {
 	privKey, err := crypto.HexToECDSA(priv)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get nonce")
+		return nil, 0, errors.Wrap(err, "failed to get nonce")
 	}
 
 	tip, err := c.tipCash.GasTipCap(ctx, c)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get GasTipCap")
+		return nil, 0, errors.Wrap(err, "failed to get GasTipCap")
 	}
 
 	gasFee, err := c.baseFeeCash.GasFee(ctx, c, tip)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get FeeCap")
+		return nil, 0, errors.Wrap(err, "failed to get FeeCap")
 	}
 
 	if gasLimit == 0 {
 		auth := bind.NewKeyedTransactor(privKey)
 		if gasLimit, err = c.estimateGasLimit(ctx, auth.From, to, amount, input, tip, gasFee); err != nil {
-			return nil, errors.Wrap(err, "failed to estimate gas")
+			return nil, 0, errors.Wrap(err, "failed to estimate gas")
 		}
 	}
 
 	n, err := c.nonceCash.Nonce(ctx, priv, c)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get nonce")
+		return nil, 0, errors.Wrap(err, "failed to get nonce")
 	}
 
-	txdata := &types.DynamicFeeTx{
-		ChainID:    c.chainID,
-		Nonce:      n,
-		GasTipCap:  tip,
-		GasFeeCap:  gasFee,
-		Gas:        gasLimit,
-		To:         to,
-		Value:      amount,
-		Data:       input,
-		AccessList: nil,
+	var (
+		txdata = &types.DynamicFeeTx{
+			ChainID:    c.chainID,
+			Nonce:      n,
+			GasTipCap:  tip,
+			GasFeeCap:  gasFee,
+			Gas:        gasLimit,
+			To:         to,
+			Value:      amount,
+			Data:       input,
+			AccessList: nil,
+		}
+		signer = types.NewLondonSigner(c.chainID)
+	)
+
+	tx, err := types.SignNewTx(privKey, signer, txdata)
+	if err != nil {
+		return nil, 0, errors.Wrap(err, "at types.SignNewTx")
 	}
 
-	signer := types.NewLondonSigner(c.chainID)
-
-	return types.SignNewTx(privKey, signer, txdata)
+	return tx, n, nil
 }
 
 func (c *Client) afterTxSent(hash string) error {

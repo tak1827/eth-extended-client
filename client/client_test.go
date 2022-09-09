@@ -114,9 +114,9 @@ func TestConcurrent(t *testing.T) {
 			confirm.WithWorkerInterval(64),
 			confirm.WithConfirmationBlock(0),
 		}
-		c, _     = NewClient(ctx, TestEndpoint, cfmOpts, WithTimeout(10), WithSyncSendConfirmInterval(128))
-		to, _    = GenerateAddr()
-		dummy, _ = GenerateAddr()
+		c, _  = NewClient(ctx, TestEndpoint, cfmOpts, WithTimeout(10), WithSyncSendConfirmInterval(128))
+		to, _ = GenerateAddr()
+		// dummy, _ = GenerateAddr()
 		amount   = ToWei(1.0, 9) // 1gwai
 		size     = 6
 		gasLimit = uint64(0)
@@ -129,25 +129,30 @@ func TestConcurrent(t *testing.T) {
 	for i := 0; i < size; i++ {
 		wg.Add(1)
 
-		// if i%2 == 0 {
-		// gasLimit = 10000
-		// } else {
-		gasLimit = 0
-		// }
-		go func(t common.Address, a *big.Int, l uint64) {
+		if i%2 == 0 {
+			gasLimit = 10000
+		} else {
+			gasLimit = 0
+		}
+		go func(a *big.Int, l uint64) {
 			defer wg.Done()
 
-			_, _ = c.SyncSend(context.Background(), TestPrivKey2, &t, a, nil, l)
-		}(to, amount, gasLimit)
+			_, err := c.SyncSend(context.Background(), TestPrivKey2, &to, a, nil, l)
+			if l == 0 {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+		}(amount, gasLimit)
 	}
 
-	time.Sleep(3 * time.Second)
-
 	for i := 0; i < size/2; i++ {
-		_, _ = c.AsyncSend(context.Background(), TestPrivKey2, &dummy, amount, nil, 0)
+		_, _ = c.AsyncSend(context.Background(), TestPrivKey2, &to, amount, nil, 0)
 	}
 
 	wg.Wait()
+
+	time.Sleep(2 * time.Second)
 
 	balance, err := c.BalanceOf(ctx, to)
 	require.NoError(t, err)

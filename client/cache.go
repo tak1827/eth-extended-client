@@ -94,21 +94,33 @@ func (c *NonceCash) Nonce(ctx context.Context, priv string, client *Client) (uin
 
 	v, ok := c.nonces.Get(priv)
 	if ok {
-		return v.(*nonce.Nonce).Increment()
+		return v.(*nonce.Nonce).Assign()
 	}
 
 	ensure := true
-	n, err := nonce.NewNonce(ctx, client, priv, ensure)
+	n, err := nonce.NewNonce(ctx, client, priv, ensure, 0)
 	if err != nil {
 		return 0, errors.Wrap(err, "failed to new nonce")
 	}
 
 	c.nonces.Add(priv, n)
 
-	return n.Increment()
+	return n.Assign()
 }
 
-func (c *NonceCash) Decrement(ctx context.Context, priv string, client *Client) error {
+func (c *NonceCash) Current(ctx context.Context, priv string) (uint64, error) {
+	c.Lock()
+	defer c.Unlock()
+
+	v, ok := c.nonces.Get(priv)
+	if !ok {
+		panic("ops")
+	}
+
+	return v.(*nonce.Nonce).Next()
+}
+
+func (c *NonceCash) AddFailedNonce(ctx context.Context, priv string, n uint64) error {
 	c.Lock()
 	defer c.Unlock()
 
@@ -117,19 +129,5 @@ func (c *NonceCash) Decrement(ctx context.Context, priv string, client *Client) 
 		return fmt.Errorf("no nonce for %s", priv)
 	}
 
-	_, err := v.(*nonce.Nonce).Decrement()
-	return err
-}
-
-func (c *NonceCash) Reset(priv string, n uint64) error {
-	c.Lock()
-	defer c.Unlock()
-
-	v, ok := c.nonces.Get(priv)
-	if !ok {
-		return fmt.Errorf("no nonce for %s", priv)
-	}
-
-	v.(*nonce.Nonce).Reset(n)
-	return nil
+	return v.(*nonce.Nonce).AddFailedNonce(n)
 }
