@@ -10,7 +10,7 @@ require (
 	github.com/stretchr/testify v1.7.0
 	github.com/tak1827/go-cache v0.0.4
 	github.com/tak1827/nonce-incrementor v0.0.0-20220909065110-864dbafb5e9e
-	github.com/tak1827/transaction-confirmer v0.0.1
+	github.com/tak1827/transaction-confirmer v0.0.2-0.20220928004933-8aa6eff26b27
 )
 
 require (

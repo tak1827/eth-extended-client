@@ -214,6 +214,13 @@ func (c *Client) ConfirmTx(ctx context.Context, hash string, confirmationBlocks 
 	return nil
 }
 
+func (c *Client) EnqueueTxHash(ctx context.Context, hash string) error {
+	if err := c.confirmer.EnqueueTxHash(ctx, hash); err != nil {
+		return errors.Wrapf(err, "failed to enqueue tx(%v)", hash)
+	}
+	return nil
+}
+
 func (c *Client) Receipt(ctx context.Context, hash string) (*types.Receipt, error) {
 	return c.ethclient.TransactionReceipt(ctx, common.HexToHash(hash))
 }
