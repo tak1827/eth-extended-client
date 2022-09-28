@@ -345,7 +345,7 @@ func (c *Client) afterTxConfirmed(hash string) error {
 }
 
 func (c *Client) errHandle(hash string, err error) {
-	c.logger.Info().Msgf("err happen while confirming transaction. tx: %v, err: %s", hash, err.Error())
+	c.logger.Error().Stack().Msgf("err happen while confirming transaction(=%s)", hash)
 	if c.unconfirmedTx.has(hash) {
 		c.unconfirmedTx.delete(hash)
 	}
