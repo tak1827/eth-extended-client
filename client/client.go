@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"math/big"
+	"strings"
 	"time"
 
 	// "github.com/davecgh/go-spew/spew"
@@ -278,27 +279,21 @@ func (c *Client) NonceCash(ctx context.Context, priv string) (uint64, error) {
 	return c.nonceCash.Current(ctx, priv)
 }
 
+func (c *Client) isSupportEIP1559(ctx context.Context) (bool, error) {
+	if _, err := c.ethclient.SuggestGasTipCap(ctx); err != nil {
+		if strings.Contains(err.Error(), "eth_maxPriorityFeePerGas does not exist") {
+			return false, nil
+		} else {
+			return false, errors.Wrap(err, "failed to get suggestiion of gas tip cap")
+		}
+	}
+	return true, nil
+}
+
 func (c *Client) sinedTx(ctx context.Context, priv string, to *common.Address, amount *big.Int, input []byte, gasLimit uint64) (*types.Transaction, uint64, error) {
 	privKey, err := crypto.HexToECDSA(priv)
 	if err != nil {
 		return nil, 0, errors.Wrap(err, "failed to get nonce")
-	}
-
-	tip, err := c.tipCash.GasTipCap(ctx, c)
-	if err != nil {
-		return nil, 0, errors.Wrap(err, "failed to get GasTipCap")
-	}
-
-	gasFee, err := c.baseFeeCash.GasFee(ctx, c, tip)
-	if err != nil {
-		return nil, 0, errors.Wrap(err, "failed to get FeeCap")
-	}
-
-	if gasLimit == 0 {
-		auth := bind.NewKeyedTransactor(privKey)
-		if gasLimit, err = c.estimateGasLimit(ctx, auth.From, to, amount, input, tip, gasFee); err != nil {
-			return nil, 0, errors.Wrap(err, "failed to estimate gas")
-		}
 	}
 
 	n, err := c.nonceCash.Nonce(ctx, priv, c)
@@ -306,7 +301,32 @@ func (c *Client) sinedTx(ctx context.Context, priv string, to *common.Address, a
 		return nil, 0, errors.Wrap(err, "failed to get nonce")
 	}
 
+	isDynamic, err := c.isSupportEIP1559(ctx)
+	if err != nil {
+		return nil, 0, errors.Wrap(err, "failed to check eip1559 support")
+	}
+
 	var (
+		txdata types.TxData
+		signer = types.NewLondonSigner(c.chainID)
+	)
+	if isDynamic {
+		tip, err := c.tipCash.GasTipCap(ctx, c)
+		if err != nil {
+			return nil, 0, errors.Wrap(err, "failed to get GasTipCap")
+		}
+
+		gasFee, err := c.baseFeeCash.GasFee(ctx, c, tip)
+		if err != nil {
+			return nil, 0, errors.Wrap(err, "failed to get FeeCap")
+		}
+
+		if gasLimit == 0 {
+			auth := bind.NewKeyedTransactor(privKey)
+			if gasLimit, err = c.estimateGasLimit(ctx, auth.From, to, amount, input, tip, gasFee); err != nil {
+				return nil, 0, errors.Wrap(err, "failed to estimate gas")
+			}
+		}
 		txdata = &types.DynamicFeeTx{
 			ChainID:    c.chainID,
 			Nonce:      n,
@@ -318,8 +338,22 @@ func (c *Client) sinedTx(ctx context.Context, priv string, to *common.Address, a
 			Data:       input,
 			AccessList: nil,
 		}
-		signer = types.NewLondonSigner(c.chainID)
-	)
+	} else {
+		if gasLimit == 0 {
+			auth := bind.NewKeyedTransactor(privKey)
+			if gasLimit, err = c.estimateGasLimit(ctx, auth.From, to, amount, input, nil, nil); err != nil {
+				return nil, 0, errors.Wrap(err, "failed to estimate gas")
+			}
+		}
+		txdata = &types.LegacyTx{
+			Nonce:    n,
+			GasPrice: c.GasPrice,
+			Gas:      gasLimit,
+			To:       to,
+			Value:    amount,
+			Data:     input,
+		}
+	}
 
 	tx, err := types.SignNewTx(privKey, signer, txdata)
 	if err != nil {

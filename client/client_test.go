@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"math/big"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -146,7 +147,7 @@ func TestConcurrent(t *testing.T) {
 		}(amount, gasLimit)
 	}
 
-	for i := 0; i < size/2; i++ {
+	for i := 0; i < size; i++ {
 		_, _ = c.AsyncSend(context.Background(), TestPrivKey2, &to, amount, nil, 0)
 	}
 
@@ -157,7 +158,38 @@ func TestConcurrent(t *testing.T) {
 	balance, err := c.BalanceOf(ctx, to)
 	require.NoError(t, err)
 
-	expected := big.NewInt(int64(size))
+	expected := big.NewInt(int64(size/2 + size))
 	expected.Mul(expected, amount)
 	require.Equal(t, expected.String(), balance.String())
+}
+
+func TestNoEIP1559SupportTx(t *testing.T) {
+	var (
+		testEndpoint = os.Getenv("NO_EIP1559_SUPPORT_ENDPOINT")
+		testPrivKey  = os.Getenv("PRI_KEY")
+	)
+
+	if testEndpoint == "" || testPrivKey == "" {
+		// skip when no setting on env
+		return
+	}
+
+	var (
+		ctx     = context.Background()
+		cfmOpts = []confirm.Opt{
+			confirm.WithWorkers(1),
+			confirm.WithWorkerInterval(64),
+			confirm.WithConfirmationBlock(0),
+		}
+		c, _   = NewClient(ctx, testEndpoint, cfmOpts, WithTimeout(10), WithSyncSendConfirmInterval(64))
+		to, _  = GenerateAddr()
+		amount = ToWei(1.0, 9) // 1gwai
+	)
+
+	c.Start()
+	defer c.Stop()
+
+	// send eth
+	_, err := c.SyncSend(ctx, testPrivKey, &to, amount, nil, 0)
+	require.NoError(t, err)
 }
