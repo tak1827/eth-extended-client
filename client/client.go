@@ -128,6 +128,7 @@ func (c *Client) Nonce(ctx context.Context, priv string) (nonce uint64, err erro
 func (c *Client) SendTx(ctx context.Context, tx interface{}) (string, error) {
 	signedTx := tx.(*types.Transaction)
 
+	c.logger.Debug().Msgf("sending tx %v", signedTx)
 	if err := c.ethclient.SendTransaction(ctx, signedTx); err != nil {
 		return "", errors.Wrap(err, "err SendTransaction")
 	}
