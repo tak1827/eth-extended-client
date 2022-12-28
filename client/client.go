@@ -343,6 +343,7 @@ func (c *Client) sinedTx(ctx context.Context, priv string, to *common.Address, a
 			Data:       input,
 			AccessList: nil,
 		}
+		c.logger.Debug().Msgf("dynamic tx contents nonce=%d, gasTip=%s, gasFee=%s, gas=%d, to=%s, value=%s, data=%s", n, tip.String(), gasFee.String(), gasLimit, to.String(), amount.String(), string(input))
 	} else {
 		if gasLimit == 0 {
 			auth := bind.NewKeyedTransactor(privKey)
@@ -350,6 +351,7 @@ func (c *Client) sinedTx(ctx context.Context, priv string, to *common.Address, a
 				return nil, 0, errors.Wrap(err, "failed to estimate gas")
 			}
 		}
+		c.logger.Debug().Msgf("legacy tx contents nonce=%d, gasPrice=%s, gas=%d, to=%s, value=%s, data=%s", n, c.GasPrice.String(), gasLimit, to.String(), amount.String(), string(input))
 		txdata = &types.LegacyTx{
 			Nonce:    n,
 			GasPrice: c.GasPrice,
@@ -360,7 +362,6 @@ func (c *Client) sinedTx(ctx context.Context, priv string, to *common.Address, a
 		}
 	}
 
-	c.logger.Debug().Msgf("txdata=%v", txdata)
 	tx, err := types.SignNewTx(privKey, signer, txdata)
 	if err != nil {
 		return nil, 0, errors.Wrap(err, "at types.SignNewTx")
