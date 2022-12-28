@@ -13,13 +13,14 @@ import (
 )
 
 const (
-	TipCapCashTTL  = 1024 * 15 // 1024 block * 15 sec
-	BaseFeeCashTTL = 1024 * 15 // 1024 block * 15 sec
+	DefaultTipCapCashTTL  = 1024 * 12 // 1024 block * 12 sec
+	DefaultBaseFeeCashTTL = 1024 * 12 // 1024 block * 12 sec
 )
 
 type TipCapCash struct {
 	sync.Mutex
 	gas       *big.Int
+	ttl       int64
 	expiredAt int64
 }
 
@@ -44,7 +45,7 @@ func (c *TipCapCash) GasTipCap(ctx context.Context, client *Client) (*big.Int, e
 
 	c.Lock()
 	c.gas = tip
-	c.expiredAt = time.Now().Unix() + TipCapCashTTL
+	c.expiredAt = time.Now().Unix() + c.ttl
 	c.Unlock()
 
 	return tip, err
@@ -53,6 +54,7 @@ func (c *TipCapCash) GasTipCap(ctx context.Context, client *Client) (*big.Int, e
 type BaseFeeCash struct {
 	sync.Mutex
 	base      *big.Int
+	ttl       int64
 	expiredAt int64
 }
 
@@ -75,7 +77,7 @@ func (c *BaseFeeCash) GasFee(ctx context.Context, client *Client, tip *big.Int) 
 
 		c.Lock()
 		c.base = baseFee
-		c.expiredAt = time.Now().Unix() + BaseFeeCashTTL
+		c.expiredAt = time.Now().Unix() + c.ttl
 		c.Unlock()
 	}
 

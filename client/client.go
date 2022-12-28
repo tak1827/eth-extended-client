@@ -35,9 +35,11 @@ type Client struct {
 	chainID  *big.Int
 	timeout  int64
 
-	tipCash     *TipCapCash
-	baseFeeCash *BaseFeeCash
-	nonceCash   *NonceCash
+	tipCapCashTTL  int64
+	tipCash        *TipCapCash
+	baseFeeCashTTL int64
+	baseFeeCash    *BaseFeeCash
+	nonceCash      *NonceCash
 
 	logger zerolog.Logger
 
@@ -60,8 +62,8 @@ func NewClient(ctx context.Context, endpoint string, cfmOpts []confirm.Opt, opts
 	c.ethclient = ethclient.NewClient(rpcclient)
 	c.GasPrice = big.NewInt(int64(DefaultGasPrice))
 	c.timeout = DefaultTimeout
-	c.tipCash = &TipCapCash{}
-	c.baseFeeCash = &BaseFeeCash{}
+	c.tipCapCashTTL = DefaultTipCapCashTTL
+	c.baseFeeCashTTL = DefaultBaseFeeCashTTL
 	c.nonceCash = &NonceCash{nonces: lru.NewCache(1024, 0)}
 	c.queueSize = DefaultConfirmerQueueSize
 	c.logger = DefaultLogger
@@ -76,6 +78,9 @@ func NewClient(ctx context.Context, endpoint string, cfmOpts []confirm.Opt, opts
 	for i := range opts {
 		opts[i].Apply(&c)
 	}
+
+	c.tipCash = &TipCapCash{ttl: c.tipCapCashTTL}
+	c.baseFeeCash = &BaseFeeCash{ttl: c.baseFeeCashTTL}
 
 	confirmer := confirm.NewConfirmer(&c, c.queueSize, append([]confirm.Opt{
 		confirm.WithWorkers(1),

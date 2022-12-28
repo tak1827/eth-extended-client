@@ -80,3 +80,21 @@ func (o LoggerOpt) Apply(c *Client) {
 func WithLoggerOpt(logger zerolog.Logger) LoggerOpt {
 	return LoggerOpt(logger)
 }
+
+type TipCapCashTTLOpt int64
+
+func (o TipCapCashTTLOpt) Apply(c *Client) {
+	c.tipCapCashTTL = int64(o)
+}
+func WithTipCapCashTTL(ttl int64) TipCapCashTTLOpt {
+	return TipCapCashTTLOpt(ttl)
+}
+
+type BaseFeeCashTTLOpt int64
+
+func (o BaseFeeCashTTLOpt) Apply(c *Client) {
+	c.baseFeeCashTTL = int64(o)
+}
+func WithBaseFeeCashTTL(ttl int64) BaseFeeCashTTLOpt {
+	return BaseFeeCashTTLOpt(ttl)
+}
