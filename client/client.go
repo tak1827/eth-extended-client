@@ -128,7 +128,6 @@ func (c *Client) Nonce(ctx context.Context, priv string) (nonce uint64, err erro
 func (c *Client) SendTx(ctx context.Context, tx interface{}) (string, error) {
 	signedTx := tx.(*types.Transaction)
 
-	c.logger.Debug().Msgf("sending tx %v", signedTx)
 	if err := c.ethclient.SendTransaction(ctx, signedTx); err != nil {
 		return "", errors.Wrap(err, "err SendTransaction")
 	}
@@ -361,6 +360,7 @@ func (c *Client) sinedTx(ctx context.Context, priv string, to *common.Address, a
 		}
 	}
 
+	c.logger.Debug().Msgf("txdata=%v", txdata)
 	tx, err := types.SignNewTx(privKey, signer, txdata)
 	if err != nil {
 		return nil, 0, errors.Wrap(err, "at types.SignNewTx")
